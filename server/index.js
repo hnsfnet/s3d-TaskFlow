@@ -66,7 +66,29 @@ const calculateProgress = (projectId) => {
   return Math.round((doneTasks.length / projectTasks.length) * 100);
 };
 
+const isDuplicateActivity = ({ projectId, actorId, type, payload }) => {
+  if (activities.length === 0) return false;
+  const now = Date.now();
+  const recent = activities.slice(0, 10);
+  for (const act of recent) {
+    const actTime = new Date(act.createdAt).getTime();
+    if (now - actTime > 2000) continue;
+    if (
+      act.projectId === projectId &&
+      act.actorId === actorId &&
+      act.type === type &&
+      JSON.stringify(act.payload) === JSON.stringify(payload || {})
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+
 const createActivity = ({ projectId, actorId, type, payload }) => {
+  if (isDuplicateActivity({ projectId, actorId, type, payload })) {
+    return null;
+  }
   const activity = {
     id: 'a' + generateId(),
     projectId,
@@ -217,18 +239,20 @@ app.patch('/api/tasks/:id', (req, res) => {
         toStatus: newTask.status,
       },
     });
-    const actorName = actorId === newTask.assigneeId ? '你' : activity.actorName;
-    const msg = `${actorName} 将 "${newTask.title}" 移至 ${STATUS_LABELS[newTask.status]}`;
-    notifyProjectMembers(newTask.projectId, activity, msg);
-    if (newTask.assigneeId && newTask.assigneeId !== actorId) {
-      const existing = notifications.find(n => n.userId === newTask.assigneeId && n.activityId === activity.id);
-      if (!existing) {
-        createNotification({
-          userId: newTask.assigneeId,
-          activity,
-          message: msg,
-          link: `/projects/${newTask.projectId}`,
-        });
+    if (activity) {
+      const actorName = actorId === newTask.assigneeId ? '你' : activity.actorName;
+      const msg = `${actorName} 将 "${newTask.title}" 移至 ${STATUS_LABELS[newTask.status]}`;
+      notifyProjectMembers(newTask.projectId, activity, msg);
+      if (newTask.assigneeId && newTask.assigneeId !== actorId) {
+        const existing = notifications.find(n => n.userId === newTask.assigneeId && n.activityId === activity.id);
+        if (!existing) {
+          createNotification({
+            userId: newTask.assigneeId,
+            activity,
+            message: msg,
+            link: `/projects/${newTask.projectId}`,
+          });
+        }
       }
     }
   }
@@ -255,9 +279,11 @@ app.post('/api/tasks', (req, res) => {
       type: 'task_created',
       payload: { taskTitle: title },
     });
-    const actorName = activity.actorName;
-    const msg = `${actorName} 创建了任务 "${title}"`;
-    notifyProjectMembers(projectId, activity, msg);
+    if (activity) {
+      const actorName = activity.actorName;
+      const msg = `${actorName} 创建了任务 "${title}"`;
+      notifyProjectMembers(projectId, activity, msg);
+    }
   }
 
   res.status(201).json(newTask);
@@ -313,8 +339,10 @@ app.delete('/api/members/:id', (req, res) => {
       type: 'member_left',
       payload: { memberName: deletedMember.name },
     });
-    const msg = `${deletedMember.name} 退出了项目 ${project.name}`;
-    notifyProjectMembers(project.id, activity, msg, deletedMember.id);
+    if (activity) {
+      const msg = `${deletedMember.name} 退出了项目 ${project.name}`;
+      notifyProjectMembers(project.id, activity, msg, deletedMember.id);
+    }
   });
 
   res.json({ message: '删除成功' });
@@ -337,14 +365,16 @@ app.post('/api/projects/:projectId/members', (req, res) => {
       type: 'member_joined',
       payload: { memberName: member.name },
     });
-    const msg = `${member.name} 加入了项目 ${project.name}`;
-    notifyProjectMembers(project.id, activity, msg, memberId);
-    createNotification({
-      userId: memberId,
-      activity,
-      message: `你 加入了项目 ${project.name}`,
-      link: `/projects/${project.id}`,
-    });
+    if (activity) {
+      const msg = `${member.name} 加入了项目 ${project.name}`;
+      notifyProjectMembers(project.id, activity, msg, memberId);
+      createNotification({
+        userId: memberId,
+        activity,
+        message: `你 加入了项目 ${project.name}`,
+        link: `/projects/${project.id}`,
+      });
+    }
   }
 
   res.json({ ...project, progress: calculateProgress(project.id) });
@@ -365,8 +395,10 @@ app.delete('/api/projects/:projectId/members/:memberId', (req, res) => {
       type: 'member_left',
       payload: { memberName: member.name },
     });
-    const msg = `${member.name} 退出了项目 ${project.name}`;
-    notifyProjectMembers(project.id, activity, msg, memberId);
+    if (activity) {
+      const msg = `${member.name} 退出了项目 ${project.name}`;
+      notifyProjectMembers(project.id, activity, msg, memberId);
+    }
   }
 
   res.json({ ...project, progress: calculateProgress(project.id) });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { taskApi } from '../services/api';
 import type { Task, TaskStatus, Member } from '../types';
 import { useUser } from '../context/UserContext';
@@ -25,41 +25,70 @@ function KanbanBoard({ projectId, projectMembers }: KanbanBoardProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
+  const dragTaskRef = useRef<Task | null>(null);
 
   useEffect(() => {
     taskApi.getByProject(projectId).then(setTasks);
   }, [projectId]);
 
-  const handleDragStart = (taskId: string) => {
-    setDraggingTaskId(taskId);
+  const handleDragStart = (e: React.DragEvent, task: Task) => {
+    dragTaskRef.current = task;
+    setDraggingTaskId(task.id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', task.id);
   };
 
   const handleDragEnd = () => {
+    dragTaskRef.current = null;
     setDraggingTaskId(null);
     setDragOverColumn(null);
   };
 
   const handleDragOver = (e: React.DragEvent, columnKey: TaskStatus) => {
     e.preventDefault();
-    setDragOverColumn(columnKey);
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverColumn !== columnKey) {
+      setDragOverColumn(columnKey);
+    }
   };
 
   const handleDrop = async (e: React.DragEvent, targetStatus: TaskStatus) => {
     e.preventDefault();
-    if (!draggingTaskId) return;
-    const task = tasks.find(t => t.id === draggingTaskId);
-    if (!task || task.status === targetStatus) return;
+    const taskId = e.dataTransfer.getData('text/plain') || draggingTaskId;
+    if (!taskId) return;
+
+    const dragTask = dragTaskRef.current || tasks.find(t => t.id === taskId);
+    if (!dragTask || dragTask.status === targetStatus) {
+      handleDragEnd();
+      return;
+    }
+
+    if (updatingTaskId === taskId) {
+      handleDragEnd();
+      return;
+    }
+
+    setUpdatingTaskId(taskId);
+
     try {
-      const updated = await taskApi.update(draggingTaskId, {
+      const updated = await taskApi.update(taskId, {
         status: targetStatus,
         actorId: currentUser.id,
       });
-      setTasks(prev => prev.map(t => (t.id === draggingTaskId ? updated : t)));
+      setTasks(prev => {
+        const exists = prev.some(t => t.id === taskId);
+        if (!exists) {
+          return [...prev, updated];
+        }
+        return prev.map(t => (t.id === taskId ? updated : t));
+      });
     } catch (err) {
       console.error('更新任务失败', err);
+    } finally {
+      setUpdatingTaskId(null);
+      handleDragEnd();
     }
-    setDraggingTaskId(null);
-    setDragOverColumn(null);
   };
 
   const getTasksByStatus = (status: TaskStatus) => tasks.filter(t => t.status === status);
@@ -85,12 +114,14 @@ function KanbanBoard({ projectId, projectMembers }: KanbanBoardProps) {
             <div>
               {columnTasks.map(task => {
                 const assignee = getMemberById(task.assigneeId);
+                const isDragging = draggingTaskId === task.id;
+                const isUpdating = updatingTaskId === task.id;
                 return (
                   <div
                     key={task.id}
-                    className={`task-card ${draggingTaskId === task.id ? 'dragging' : ''}`}
-                    draggable
-                    onDragStart={() => handleDragStart(task.id)}
+                    className={`task-card ${isDragging ? 'dragging' : ''} ${isUpdating ? 'task-card-updating' : ''}`}
+                    draggable={!isUpdating}
+                    onDragStart={e => handleDragStart(e, task)}
                     onDragEnd={handleDragEnd}
                   >
                     <div className="task-card-title">{task.title}</div>

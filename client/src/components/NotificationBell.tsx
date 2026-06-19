@@ -1,44 +1,63 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Notification } from '../types';
 import { memberApi, notificationApi } from '../services/api';
 import { useUser } from '../context/UserContext';
 import { formatRelativeTime } from '../utils/format';
 
+const POLL_INTERVAL = 8000;
+
 const NotificationBell: React.FC = () => {
   const { currentUser, setAllMembers } = useUser();
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [loadingMarkAll, setLoadingMarkAll] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const pollTimerRef = useRef<number | null>(null);
+  const skipNextPollRef = useRef(false);
   const navigate = useNavigate();
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   useEffect(() => {
     memberApi.getAll().then(setAllMembers).catch(() => {});
   }, [setAllMembers]);
 
-  const loadAll = () => {
-    Promise.all([
-      notificationApi.getByUser(currentUser.id),
-      notificationApi.getUnreadCount(currentUser.id),
-    ]).then(([list, c]) => {
-      setNotifications(list);
-      setUnreadCount(c.count);
-    });
-  };
+  const refreshUnreadCount = useCallback(async () => {
+    try {
+      const c = await notificationApi.getUnreadCount(currentUser.id);
+      if (!skipNextPollRef.current) {
+        setNotifications(prev => {
+          let unreadInPrev = prev.filter(n => !n.read).length;
+          if (unreadInPrev === c.count) return prev;
+          return prev;
+        });
+      }
+      skipNextPollRef.current = false;
+    } catch {}
+  }, [currentUser.id]);
 
-  useEffect(() => {
-    loadAll();
-    const itv = setInterval(() => {
-      notificationApi.getUnreadCount(currentUser.id).then(c => setUnreadCount(c.count));
-    }, 8000);
-    return () => clearInterval(itv);
+  const loadAll = useCallback(async () => {
+    try {
+      const [list, c] = await Promise.all([
+        notificationApi.getByUser(currentUser.id),
+        notificationApi.getUnreadCount(currentUser.id),
+      ]);
+      setNotifications(list);
+    } catch {}
   }, [currentUser.id]);
 
   useEffect(() => {
+    loadAll();
+    pollTimerRef.current = window.setInterval(refreshUnreadCount, POLL_INTERVAL);
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, [currentUser.id, loadAll, refreshUnreadCount]);
+
+  useEffect(() => {
     if (open) loadAll();
-  }, [open, currentUser.id]);
+  }, [open, currentUser.id, loadAll]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -53,32 +72,41 @@ const NotificationBell: React.FC = () => {
   const handleMarkRead = async (id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    await notificationApi.markAsRead(id);
-    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)));
-    setUnreadCount(c => Math.max(0, c - 1));
+    skipNextPollRef.current = true;
+    try {
+      await notificationApi.markAsRead(id);
+      setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)));
+    } catch {
+      skipNextPollRef.current = false;
+    }
   };
 
   const handleMarkAllRead = async () => {
     setLoadingMarkAll(true);
+    skipNextPollRef.current = true;
     try {
       await notificationApi.markAllAsRead(currentUser.id);
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-      setUnreadCount(0);
+    } catch {
+      skipNextPollRef.current = false;
     } finally {
       setLoadingMarkAll(false);
     }
   };
 
-  const handleClickItem = (n: Notification) => {
+  const handleClickItem = async (n: Notification) => {
     if (!n.read) {
-      notificationApi.markAsRead(n.id).then(() => {
+      skipNextPollRef.current = true;
+      try {
+        await notificationApi.markAsRead(n.id);
         setNotifications(prev => prev.map(x => (x.id === n.id ? { ...x, read: true } : x)));
-        setUnreadCount(c => Math.max(0, c - 1));
-      });
+      } catch {
+        skipNextPollRef.current = false;
+      }
     }
     if (n.link) {
-      navigate(n.link);
       setOpen(false);
+      navigate(n.link);
     }
   };
 
