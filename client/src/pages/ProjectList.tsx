@@ -1,21 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { projectApi, memberApi } from '../services/api';
-import type { Project, Member } from '../types';
+import { useProjects, useMembers } from '../hooks';
 
 function ProjectList() {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { projects, loading: projectsLoading, loadProjects } = useProjects();
+  const { members, loading: membersLoading, loadMembers, getMemberById } = useMembers();
 
   useEffect(() => {
-    Promise.all([projectApi.getAll(), memberApi.getAll()]).then(([projectsData, membersData]) => {
-      setProjects(projectsData);
-      setMembers(membersData);
-      setLoading(false);
-    });
-  }, []);
+    loadProjects();
+    loadMembers();
+  }, [loadProjects, loadMembers]);
+
+  const loading = projectsLoading || membersLoading;
 
   if (loading) return <div className="loading">加载中...</div>;
 
@@ -24,7 +21,9 @@ function ProjectList() {
       <h1 className="page-title">项目列表</h1>
       <div className="project-grid">
         {projects.map(project => {
-          const projectMembers = members.filter(m => project.memberIds.includes(m.id));
+          const projectMembers = project.memberIds
+            .map(id => getMemberById(id))
+            .filter(Boolean);
           return (
             <div
               key={project.id}
@@ -49,7 +48,7 @@ function ProjectList() {
               </div>
               <div className="project-members">
                 <div className="avatar-group">
-                  {projectMembers.slice(0, 4).map(member => (
+                  {projectMembers.slice(0, 4).map(member => member && (
                     <img
                       key={member.id}
                       src={member.avatar}

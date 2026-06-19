@@ -1,7 +1,6 @@
-import { useEffect, useState, useRef } from 'react';
-import { taskApi } from '../services/api';
-import type { Task, TaskStatus, Member } from '../types';
-import { useUser } from '../context/UserContext';
+import { useEffect, useState } from 'react';
+import { useTasks } from '../hooks';
+import type { TaskStatus, Member } from '../types';
 
 interface KanbanBoardProps {
   projectId: string;
@@ -14,38 +13,41 @@ const COLUMNS: { key: TaskStatus; title: string }[] = [
   { key: 'done', title: '已完成' },
 ];
 
-const PRIORITY_LABELS: Record<Task['priority'], string> = {
+const PRIORITY_LABELS = {
   high: '高',
   medium: '中',
   low: '低',
-};
+} as const;
 
 function KanbanBoard({ projectId, projectMembers }: KanbanBoardProps) {
-  const { currentUser } = useUser();
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const {
+    tasksByStatus,
+    updatingTaskId,
+    handleDragStart,
+    handleDragEnd,
+    handleDrop,
+  } = useTasks(projectId);
   const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
-  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
-  const dragTaskRef = useRef<Task | null>(null);
 
   useEffect(() => {
-    taskApi.getByProject(projectId).then(setTasks);
-  }, [projectId]);
+    return () => {
+      handleDragEnd();
+    };
+  }, [handleDragEnd]);
 
-  const handleDragStart = (e: React.DragEvent, task: Task) => {
-    dragTaskRef.current = task;
-    setDraggingTaskId(task.id);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', task.id);
+  const onDragStart = (e: React.DragEvent, taskId: string, status: TaskStatus) => {
+    setDraggingTaskId(taskId);
+    handleDragStart(e, taskId, status);
   };
 
-  const handleDragEnd = () => {
-    dragTaskRef.current = null;
+  const onDragEnd = () => {
     setDraggingTaskId(null);
     setDragOverColumn(null);
+    handleDragEnd();
   };
 
-  const handleDragOver = (e: React.DragEvent, columnKey: TaskStatus) => {
+  const onDragOver = (e: React.DragEvent, columnKey: TaskStatus) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     if (dragOverColumn !== columnKey) {
@@ -53,59 +55,24 @@ function KanbanBoard({ projectId, projectMembers }: KanbanBoardProps) {
     }
   };
 
-  const handleDrop = async (e: React.DragEvent, targetStatus: TaskStatus) => {
-    e.preventDefault();
-    const taskId = e.dataTransfer.getData('text/plain') || draggingTaskId;
-    if (!taskId) return;
-
-    const dragTask = dragTaskRef.current || tasks.find(t => t.id === taskId);
-    if (!dragTask || dragTask.status === targetStatus) {
-      handleDragEnd();
-      return;
-    }
-
-    if (updatingTaskId === taskId) {
-      handleDragEnd();
-      return;
-    }
-
-    setUpdatingTaskId(taskId);
-
-    try {
-      const updated = await taskApi.update(taskId, {
-        status: targetStatus,
-        actorId: currentUser.id,
-      });
-      setTasks(prev => {
-        const exists = prev.some(t => t.id === taskId);
-        if (!exists) {
-          return [...prev, updated];
-        }
-        return prev.map(t => (t.id === taskId ? updated : t));
-      });
-    } catch (err) {
-      console.error('更新任务失败', err);
-    } finally {
-      setUpdatingTaskId(null);
-      handleDragEnd();
-    }
+  const onDrop = (e: React.DragEvent, targetStatus: TaskStatus) => {
+    handleDrop(e, targetStatus);
+    onDragEnd();
   };
-
-  const getTasksByStatus = (status: TaskStatus) => tasks.filter(t => t.status === status);
 
   const getMemberById = (id: string | null) => projectMembers.find(m => m.id === id);
 
   return (
     <div className="kanban-board">
       {COLUMNS.map(column => {
-        const columnTasks = getTasksByStatus(column.key);
+        const columnTasks = tasksByStatus(column.key);
         return (
           <div
             key={column.key}
             className={`kanban-column ${dragOverColumn === column.key ? 'drag-over' : ''}`}
-            onDragOver={e => handleDragOver(e, column.key)}
+            onDragOver={e => onDragOver(e, column.key)}
             onDragLeave={() => setDragOverColumn(null)}
-            onDrop={e => handleDrop(e, column.key)}
+            onDrop={e => onDrop(e, column.key)}
           >
             <div className="kanban-column-header">
               <span className="kanban-column-title">{column.title}</span>
@@ -121,8 +88,8 @@ function KanbanBoard({ projectId, projectMembers }: KanbanBoardProps) {
                     key={task.id}
                     className={`task-card ${isDragging ? 'dragging' : ''} ${isUpdating ? 'task-card-updating' : ''}`}
                     draggable={!isUpdating}
-                    onDragStart={e => handleDragStart(e, task)}
-                    onDragEnd={handleDragEnd}
+                    onDragStart={e => onDragStart(e, task.id, task.status)}
+                    onDragEnd={onDragEnd}
                   >
                     <div className="task-card-title">{task.title}</div>
                     <div className="task-card-footer">

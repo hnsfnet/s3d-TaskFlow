@@ -1,38 +1,26 @@
 import { useEffect, useState } from 'react';
-import { memberApi } from '../services/api';
-import type { Member, MemberRole } from '../types';
-import { useUser } from '../context/UserContext';
+import { useMembers } from '../hooks';
+import type { MemberRole } from '../types';
 
 function Members() {
-  const { currentUser, setAllMembers } = useUser();
-  const [members, setMembers] = useState<Member[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { members, currentUser, loading, loadMembers, addMember, deleteMember } = useMembers();
   const [showModal, setShowModal] = useState(false);
   const [formName, setFormName] = useState('');
   const [formRole, setFormRole] = useState<MemberRole>('member');
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const loadMembers = () => {
-    memberApi.getAll().then(data => {
-      setMembers(data);
-      setAllMembers(data);
-      setLoading(false);
-    });
-  };
-
   useEffect(() => {
     loadMembers();
-  }, []);
+  }, [loadMembers]);
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) return;
     try {
-      await memberApi.create({ name: formName.trim(), role: formRole });
+      await addMember(formName.trim(), formRole);
       setFormName('');
       setFormRole('member');
       setShowModal(false);
-      loadMembers();
     } catch (err) {
       console.error('添加成员失败', err);
     }
@@ -41,8 +29,7 @@ function Members() {
   const handleDeleteMember = async (id: string) => {
     setDeletingId(id);
     try {
-      await memberApi.remove(id, currentUser.id);
-      loadMembers();
+      await deleteMember(id);
     } catch (err) {
       console.error('删除成员失败', err);
     } finally {
@@ -85,7 +72,7 @@ function Members() {
               <button
                 className="btn btn-danger"
                 onClick={() => handleDeleteMember(member.id)}
-                disabled={deletingId === member.id}
+                disabled={deletingId === member.id || member.id === currentUser?.id}
               >
                 {deletingId === member.id ? '删除中...' : '删除'}
               </button>
