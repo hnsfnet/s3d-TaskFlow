@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { taskApi } from '../services/api';
 import type { Task, TaskStatus, Member } from '../types';
+import { useUser } from '../context/UserContext';
 
 interface KanbanBoardProps {
   projectId: string;
@@ -20,6 +21,7 @@ const PRIORITY_LABELS: Record<Task['priority'], string> = {
 };
 
 function KanbanBoard({ projectId, projectMembers }: KanbanBoardProps) {
+  const { currentUser } = useUser();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
@@ -48,7 +50,10 @@ function KanbanBoard({ projectId, projectMembers }: KanbanBoardProps) {
     const task = tasks.find(t => t.id === draggingTaskId);
     if (!task || task.status === targetStatus) return;
     try {
-      const updated = await taskApi.update(draggingTaskId, { status: targetStatus });
+      const updated = await taskApi.update(draggingTaskId, {
+        status: targetStatus,
+        actorId: currentUser.id,
+      });
       setTasks(prev => prev.map(t => (t.id === draggingTaskId ? updated : t)));
     } catch (err) {
       console.error('更新任务失败', err);

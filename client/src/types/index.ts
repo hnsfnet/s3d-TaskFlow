@@ -28,3 +28,33 @@ export interface Project {
   progress: number;
   tasks?: Task[];
 }
+
+export type ActivityType = 'task_created' | 'task_moved' | 'member_joined' | 'member_left';
+
+export interface ActivityPayload {
+  taskTitle?: string;
+  fromStatus?: TaskStatus;
+  toStatus?: TaskStatus;
+  memberName?: string;
+}
+
+export interface Activity {
+  id: string;
+  projectId: string;
+  actorId: string;
+  actorName: string;
+  actorAvatar: string;
+  type: ActivityType;
+  payload: ActivityPayload;
+  createdAt: string;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  activityId: string;
+  message: string;
+  link: string | null;
+  read: boolean;
+  createdAt: string;
+}

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { projectApi, memberApi } from '../services/api';
 import type { Project, Member } from '../types';
 import KanbanBoard from '../components/KanbanBoard';
+import ActivityPanel from '../components/ActivityPanel';
 
 function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -27,40 +28,41 @@ function ProjectDetail() {
   return (
     <div>
       <Link to="/" className="back-link">← 返回项目列表</Link>
-      <div className="project-detail-header">
-        <h1 className="project-detail-name">{project.name}</h1>
-        <p className="project-detail-desc">{project.description}</p>
-        <div className="project-detail-meta">
-          <div className="progress-bar-wrapper" style={{ flex: '1', minWidth: '200px', marginBottom: 0 }}>
-            <div className="progress-bar-label">
-              <span>完成进度</span>
-              <span>{project.progress}%</span>
-            </div>
-            <div className="progress-bar">
-              <div
-                className="progress-bar-fill" style={{ width: `${project.progress}%` }} />
+      <div className="project-detail-layout">
+        <div className="project-detail-main">
+          <div className="project-detail-header">
+            <h1 className="project-detail-name">{project.name}</h1>
+            <p className="project-detail-desc">{project.description}</p>
+            <div className="project-detail-meta">
+              <div className="progress-bar-wrapper" style={{ flex: '1', minWidth: '200px', marginBottom: 0 }}>
+                <div className="progress-bar-label">
+                  <span>完成进度</span>
+                  <span>{project.progress}%</span>
+                </div>
+                <div className="progress-bar">
+                  <div className="progress-bar-fill" style={{ width: `${project.progress}%` }} />
+                </div>
+              </div>
+              <div className="project-detail-members">
+                <span className="members-label">团队成员：</span>
+                <div className="avatar-group">
+                  {projectMembers.map(member => (
+                    <img
+                      key={member.id}
+                      src={member.avatar}
+                      alt={member.name}
+                      className="avatar avatar-large"
+                      title={member.name}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
-          <div className="project-detail-members">
-            <span className="members-label">团队成员：</span>
-            <div className="avatar-group">
-              {projectMembers.map(member => (
-                <img
-                  key={member.id}
-                  src={member.avatar}
-                  alt={member.name}
-                  className="avatar avatar-large"
-                  title={member.name}
-                />
-              ))}
-            </div>
-          </div>
+          <KanbanBoard projectId={project.id} projectMembers={projectMembers} />
         </div>
+        <ActivityPanel projectId={project.id} />
       </div>
-      <KanbanBoard
-        projectId={project.id}
-        projectMembers={projectMembers}
-      />
     </div>
   );
 }

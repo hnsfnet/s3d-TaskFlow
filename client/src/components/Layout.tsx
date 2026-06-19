@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import NotificationBell from './NotificationBell';
 
 function Layout() {
   return (
@@ -13,6 +14,7 @@ function Layout() {
             成员
           </NavLink>
         </div>
+        <NotificationBell />
       </nav>
       <main className="main-content">
         <Outlet />

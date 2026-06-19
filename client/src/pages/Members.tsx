@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { memberApi } from '../services/api';
 import type { Member, MemberRole } from '../types';
+import { useUser } from '../context/UserContext';
 
 function Members() {
+  const { currentUser, setAllMembers } = useUser();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -13,6 +15,7 @@ function Members() {
   const loadMembers = () => {
     memberApi.getAll().then(data => {
       setMembers(data);
+      setAllMembers(data);
       setLoading(false);
     });
   };
@@ -38,7 +41,7 @@ function Members() {
   const handleDeleteMember = async (id: string) => {
     setDeletingId(id);
     try {
-      await memberApi.remove(id);
+      await memberApi.remove(id, currentUser.id);
       loadMembers();
     } catch (err) {
       console.error('删除成员失败', err);
